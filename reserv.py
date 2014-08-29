@@ -12,23 +12,19 @@ sys.setdefaultencoding( "utf-8" )
 
 #抓取空闲研修室的方法，输出格式见API文档
 class reseverlib(SGMLParser):
-   #def __init__(self, sid, psw,xuebu):
-     #   SGMLParser.__init__(self)
-     #   self.sid= sid#学号
-     #   self.psw = psw#密码（身份证后六位）
-    #    self.xuebu=xuebu
     def getroominfo(self,year,month,day,xuebu):#获取空闲研修室信息，参数为年月日和学部（1是本部，2是医学部）
         self.year=year
         self.month=month
         self.day=day
         self.xuebu=xuebu
+        self.roomids=[]
         nump=re.compile("room=\d+")
         dic={}    #返回字典格式见文档
         rooms={}    
         rooms['1']=[]
         rooms['2']=[]
         rooms['3']=[]
-        rooms['4']=[]    #返回四个时间段分别空闲的房间
+        rooms['4']=[]    #返回四个时间段分别空闲的房间号
 #本部
         if int(self.xuebu)==1:
             url_1_6='http://reserv.lib.whu.edu.cn/day.php?year=%s&month=%s&day=%s&area=6'%(year,month,day)
@@ -446,21 +442,20 @@ class reseverlib(SGMLParser):
         soup=BeautifulSoup(urllib2.urlopen(req))
         pageinfo=str(soup)#以下代码为获取预订的房间id
         links=soup.find_all('a',attrs={'href':re.compile('view_entry')})#抓取已预订的房间链接
-        global roomids
-        roomids=[]
+        global roomid
         for link in links:   #str                 #将gb2312编码为utf-8
             if link.renderContents()==name.decode('gb2312'):
                 linkofid=link['href']#获得链接中的网址部分（id包含在其中）
                 linkstr=str(linkofid)
                 numid=re.compile("id=\d+")
                 roomid=numid.findall(linkstr)[0][3:]#正则匹配出id
-                roomids.append(roomid)#将房间id加入列表中
+                self.roomids.append(roomid)
         if 'Fatal error' in pageinfo:
             return '预订出错，请稍后再试'
         elif 'repeat reservation' in pageinfo:
             return '您已经预订过，无法继续预订研修室'
         elif 'Go To Today' in pageinfo:
-            return '预订成功'
+            return '预订成功,'+'您的订单id为'+roomid+',房间号为'+room_
         return roomids
     def reservbyroom(self,tel,email,description,area,room):
         self.area=area
@@ -502,21 +497,29 @@ class reseverlib(SGMLParser):
         req = urllib2.Request(url=handpage,data=urllib.urlencode(postdata))
         req.add_header('Cookie', cookie)
         soup=BeautifulSoup(urllib2.urlopen(req))
-        pageinfo=str(soup)
+        pageinfo=str(soup)#以下代码为获取预订的房间id
+        links=soup.find_all('a',attrs={'href':re.compile('view_entry')})#抓取已预订的房间链接
+        global roomid
+        for link in links:   #str                 #将gb2312编码为utf-8
+            if link.renderContents()==name.decode('gb2312'):
+                linkofid=link['href']#获得链接中的网址部分（id包含在其中）
+                linkstr=str(linkofid)
+                numid=re.compile("id=\d+")
+                roomid=numid.findall(linkstr)[0][3:]#正则匹配出id
+                self.roomids.append(roomid)
         if 'Fatal error' in pageinfo:
             return '预订出错，请检查房间是否为空，或稍后再试'
         elif 'repeat reservation' in pageinfo:
             return '您已经预订过，无法继续预订研修室'
         elif 'Go To Today' in pageinfo:
-            return '预订成功'
+            return '预订成功,'+'您的订单id为'+roomid
     def cancle(self):
-        for roomid in roomids:
+        for roomid in self.roomids:
             handpage="http://reserv.lib.whu.edu.cn/del_entry.php?id=%s&amp;series=0&year=%s&month=%s&day=%s&area=%s&room=%s"%(roomid,self.year,self.month,self.day,area,room_)
             req = urllib2.Request(url=handpage)
             req.add_header('Cookie', cookie)
             soup=BeautifulSoup(urllib2.urlopen(req))
             pageinfo=str(soup)
-            #print pageinfo
             if 'do not have access' in pageinfo:
                 return '取消预订失败，请稍后再试'
             elif 'Go To Today' in pageinfo:
@@ -525,19 +528,25 @@ class reseverlib(SGMLParser):
                 return '未知错误'
 
 
-test=reseverlib()
-dic=test.getroominfo('2014','08','27','1')[0]
-rooms=test.getroominfo('2014','08','27','1')[1]
+test=reseverlib()#实例化
+room_input=raw_input("请输入想要查询空闲研修室的日期（格式为yyyy,mm,dd),和你所在学部，本部为1，医学部为2,均用英文逗号隔开")
+room_param=room_input.split(",")
+dic=test.getroominfo(room_param[0],room_param[1],room_param[2],room_param[3])[0]#查询空闲研修室
+rooms=test.getroominfo(room_param[0],room_param[1],room_param[2],room_param[3])[1]
 print dic,rooms
-print test.choseroom(dic,rooms,'2','3')#如果没有房间，输出Error,不进行预订操作
-if test.choseroom(dic,rooms,'2','3')=="Error:no room avilivable":
+chose_input=raw_input("请输入需要预订的人数（文理学部只有2人4人8人间，医学部有1人4人8人间）和时间段（8:00~11:30——1，11:30~15:00——2，15:00~18:30——3，18:30~22:00——4），用英文逗号隔开")
+chose_param=chose_input.split(",")
+print test.choseroom(dic,rooms,chose_param[0],chose_param[1])#如果没有房间，输出Error,不进行预订操作
+if test.choseroom(dic,rooms,chose_param[0],chose_param[1])=="Error:no room avilivable":
     pass
 else: 
     test.getcookie('2013302480033','114028')
-    room=test.choseroom(dic,rooms,'2','3')[0]
-    area=test.choseroom(dic,rooms,'2','3')[1]
-    test.getuserinfo()[0]
-    print test.autoreserv('zzjh','1820717818','963949236@qq.com',area,room_)#自动分配研修室
+    room=test.choseroom(dic,rooms,chose_param[0],chose_param[1])[0]
+    area=test.choseroom(dic,rooms,chose_param[0],chose_param[1])[1]
+    test.getuserinfo()
+    info_input=raw_input("输入研修室用途，您的手机号和邮箱，用英文逗号隔开~")
+    info_param=info_input.split(",")
+    print test.autoreserv(info_param[0],info_param[0],info_param[0],area,room_)#自动分配研修室，返回房间号和订单Id
     #print test.reservbyroom('zzjh','1820717818','963949236@qq.com',area,'28')#用户通过输入房间号选择研修室
-    #test.cancle()
+    print test.cancle()
 
